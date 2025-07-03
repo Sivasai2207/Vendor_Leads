@@ -31,7 +31,7 @@ export default function LeadTable() {
               <th className="px-6 py-4">Phone</th>
               <th className="px-6 py-4">Email</th>
               <th className="px-6 py-4">Notes</th>
-              <th className="px-6 py-4">Vote</th>
+              <th className="px-6 py-4">Votes</th>
               <th className="px-6 py-4"></th>
             </tr>
           </thead>
