@@ -5,10 +5,12 @@ import {
   collection,
   onSnapshot,
   doc,
-  updateDoc,
+  getDoc,
   setDoc,
-  increment,
   deleteDoc,
+  updateDoc,
+  increment,
+  writeBatch,
 } from "firebase/firestore";
 import { MoreVertical } from "lucide-react";
 
@@ -18,35 +20,51 @@ export default function LeadTable() {
   const [selectedLead, setSelectedLead] = useState(null);
   const [isModalOpen, setModalOpen] = useState(false);
 
-  // 🔁 Load real-time data from Firestore
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "vendorLeads"), (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      console.log("📡 Firestore leads:", data);
+      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setLeads(data);
     });
     return () => unsubscribe();
   }, []);
 
-  // 🗳 Handle vote
-  const handleVote = async (leadId, type) => {
+  const handleVote = async (leadId, newVoteType) => {
     if (!user) return alert("Please login to vote");
+
     const voteRef = doc(db, `vendorLeads/${leadId}/votes`, user.uid);
-    await setDoc(voteRef, {
-      userId: user.uid,
-      voteType: type,
-      created_at: new Date(),
-    });
     const leadRef = doc(db, "vendorLeads", leadId);
-    await updateDoc(leadRef, {
-      [`${type}_count`]: increment(1),
-    });
+    const voteSnap = await getDoc(voteRef);
+    const previousVote = voteSnap.exists() ? voteSnap.data().voteType : null;
+
+    const batch = writeBatch(db);
+
+    if (previousVote === newVoteType) {
+      // Unvote (toggle off)
+      batch.delete(voteRef);
+      batch.update(leadRef, {
+        [`${newVoteType}_count`]: increment(-1),
+      });
+    } else {
+      if (previousVote) {
+        batch.update(leadRef, {
+          [`${previousVote}_count`]: increment(-1),
+        });
+      }
+
+      batch.set(voteRef, {
+        userId: user.uid,
+        voteType: newVoteType,
+        created_at: new Date(),
+      });
+
+      batch.update(leadRef, {
+        [`${newVoteType}_count`]: increment(1),
+      });
+    }
+
+    await batch.commit();
   };
 
-  // 🗑 Delete lead
   const handleDelete = async (leadId) => {
     if (!window.confirm("Are you sure you want to delete this lead?")) return;
     await deleteDoc(doc(db, "vendorLeads", leadId));
@@ -88,13 +106,22 @@ export default function LeadTable() {
                   <td className="px-6 py-4">{lead.email ?? "N/A"}</td>
                   <td className="px-6 py-4">{lead.notes ?? "N/A"}</td>
                   <td className="px-6 py-4 flex gap-3">
-                    <button onClick={() => handleVote(lead.id, "like")} className="text-green-600">
+                    <button
+                      onClick={() => handleVote(lead.id, "like")}
+                      className="text-green-600"
+                    >
                       👍 {lead.like_count ?? 0}
                     </button>
-                    <button onClick={() => handleVote(lead.id, "dislike")} className="text-red-500">
+                    <button
+                      onClick={() => handleVote(lead.id, "dislike")}
+                      className="text-red-500"
+                    >
                       👎 {lead.dislike_count ?? 0}
                     </button>
-                    <button onClick={() => handleVote(lead.id, "stopped")} className="text-yellow-600">
+                    <button
+                      onClick={() => handleVote(lead.id, "stopped")}
+                      className="text-yellow-600"
+                    >
                       ⛔ {lead.stopped_count ?? 0}
                     </button>
                   </td>
@@ -114,19 +141,21 @@ export default function LeadTable() {
       {isModalOpen && selectedLead && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6 relative">
-            <button className="absolute top-2 right-2 text-gray-500 text-xl" onClick={closeModal}>
+            <button
+              className="absolute top-2 right-2 text-gray-500 text-xl"
+              onClick={closeModal}
+            >
               ✖
             </button>
             <h2 className="text-xl font-bold mb-4">Lead Details</h2>
             <div className="space-y-2 text-sm text-gray-700">
-              <p><strong>Name:</strong> {selectedLead.name ?? "N/A"}</p>
-              <p><strong>Company:</strong> {selectedLead.companyName ?? "N/A"}</p>
-              <p><strong>Phone:</strong> {selectedLead.phone ?? "N/A"}</p>
-              <p><strong>Email:</strong> {selectedLead.email ?? "N/A"}</p>
-              <p><strong>Notes:</strong> {selectedLead.notes ?? "N/A"}</p>
+              <p><strong>Name:</strong> {selectedLead.name}</p>
+              <p><strong>Company:</strong> {selectedLead.companyName}</p>
+              <p><strong>Phone:</strong> {selectedLead.phone}</p>
+              <p><strong>Email:</strong> {selectedLead.email}</p>
+              <p><strong>Notes:</strong> {selectedLead.notes}</p>
               <p>
-                <strong>Votes:</strong> 👍 {selectedLead.like_count ?? 0}, 👎{" "}
-                {selectedLead.dislike_count ?? 0}, ⛔ {selectedLead.stopped_count ?? 0}
+                <strong>Votes:</strong> 👍 {selectedLead.like_count ?? 0}, 👎 {selectedLead.dislike_count ?? 0}, ⛔ {selectedLead.stopped_count ?? 0}
               </p>
             </div>
             {user?.uid === selectedLead.authorId && (
