@@ -28,42 +28,48 @@ export default function LeadTable() {
     return () => unsubscribe();
   }, []);
 
-  const handleVote = async (leadId, newVoteType) => {
-    if (!user) return alert("Please login to vote");
+const handleVote = async (leadId, type) => {
+  if (!user) return alert("Please log in to vote");
 
-    const voteRef = doc(db, `vendorLeads/${leadId}/votes`, user.uid);
-    const leadRef = doc(db, "vendorLeads", leadId);
-    const voteSnap = await getDoc(voteRef);
-    const previousVote = voteSnap.exists() ? voteSnap.data().voteType : null;
+  const voteRef = doc(db, `vendorLeads/${leadId}/votes`, user.uid);
+  const leadRef = doc(db, "vendorLeads", leadId);
 
-    const batch = writeBatch(db);
+  const voteSnap = await getDoc(voteRef);
 
-    if (previousVote === newVoteType) {
-      // Unvote (toggle off)
-      batch.delete(voteRef);
-      batch.update(leadRef, {
-        [`${newVoteType}_count`]: increment(-1),
+  if (voteSnap.exists()) {
+    const existingVote = voteSnap.data().voteType;
+
+    if (existingVote === type) {
+      // User clicked same vote again, remove vote
+      await deleteDoc(voteRef);
+      await updateDoc(leadRef, {
+        [`${type}_count`]: increment(-1)
       });
     } else {
-      if (previousVote) {
-        batch.update(leadRef, {
-          [`${previousVote}_count`]: increment(-1),
-        });
-      }
-
-      batch.set(voteRef, {
-        userId: user.uid,
-        voteType: newVoteType,
-        created_at: new Date(),
+      // User is switching vote
+      await updateDoc(leadRef, {
+        [`${existingVote}_count`]: increment(-1),
+        [`${type}_count`]: increment(1)
       });
-
-      batch.update(leadRef, {
-        [`${newVoteType}_count`]: increment(1),
+      await setDoc(voteRef, {
+        userId: user.uid,
+        voteType: type,
+        created_at: new Date()
       });
     }
+  } else {
+    // First vote
+    await setDoc(voteRef, {
+      userId: user.uid,
+      voteType: type,
+      created_at: new Date()
+    });
+    await updateDoc(leadRef, {
+      [`${type}_count`]: increment(1)
+    });
+  }
+};
 
-    await batch.commit();
-  };
 
   const handleDelete = async (leadId) => {
     if (!window.confirm("Are you sure you want to delete this lead?")) return;
