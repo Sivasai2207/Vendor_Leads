@@ -29,7 +29,7 @@ export default function LeadTable() {
     return () => unsubscribe();
   }, []);
 
-const handleVote = async (leadId, voteType) => {
+const handleVote = async (leadId, newVoteType) => {
   if (!user) return alert("Please login to vote");
 
   const voteRef = doc(db, `vendorLeads/${leadId}/votes`, user.uid);
@@ -37,37 +37,35 @@ const handleVote = async (leadId, voteType) => {
 
   try {
     await runTransaction(db, async (tx) => {
-      const [leadSnap, voteSnap] = await Promise.all([
-        tx.get(leadRef),
-        tx.get(voteRef),
-      ]);
+      const voteSnap = await tx.get(voteRef);
+      const leadSnap = await tx.get(leadRef);
 
       if (!leadSnap.exists()) throw new Error("Lead does not exist");
+
       const previousVote = voteSnap.exists() ? voteSnap.data().voteType : null;
 
-      if (previousVote === voteType) {
-        // 🔁 Clicking same vote → remove it
-        tx.update(leadRef, { [`${voteType}_count`]: increment(-1) });
+      if (previousVote === newVoteType) {
+        // 🔁 Remove vote (toggle off)
+        tx.update(leadRef, { [`${newVoteType}_count`]: increment(-1) });
         tx.delete(voteRef);
       } else {
-        // 🔁 Switch vote or cast new vote
+        // 🔁 Change vote
         if (previousVote) {
           tx.update(leadRef, { [`${previousVote}_count`]: increment(-1) });
         }
-        tx.update(leadRef, { [`${voteType}_count`]: increment(1) });
+        tx.update(leadRef, { [`${newVoteType}_count`]: increment(1) });
         tx.set(voteRef, {
+          voteType: newVoteType,
           userId: user.uid,
-          voteType,
-          created_at: new Date()
+          updated_at: new Date(),
         });
       }
     });
   } catch (err) {
-    console.error("Vote error:", err.message);
-    alert("Failed to cast vote. Try again.");
+    console.error("Voting error:", err.message);
+    alert("Could not vote. Try again.");
   }
 };
-
 
   const handleDelete = async (leadId) => {
     if (!window.confirm("Are you sure you want to delete this lead?")) return;
