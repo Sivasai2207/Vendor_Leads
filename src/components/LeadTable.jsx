@@ -5,6 +5,7 @@ import {
   collection,
   onSnapshot,
   doc,
+  runTransaction,
   getDoc,
   setDoc,
   deleteDoc,
@@ -28,45 +29,42 @@ export default function LeadTable() {
     return () => unsubscribe();
   }, []);
 
-const handleVote = async (leadId, type) => {
-  if (!user) return alert("Please log in to vote");
+const handleVote = async (leadId, voteType) => {
+  if (!user) return alert("Please login to vote");
 
   const voteRef = doc(db, `vendorLeads/${leadId}/votes`, user.uid);
   const leadRef = doc(db, "vendorLeads", leadId);
 
-  const voteSnap = await getDoc(voteRef);
+  try {
+    await runTransaction(db, async (tx) => {
+      const [leadSnap, voteSnap] = await Promise.all([
+        tx.get(leadRef),
+        tx.get(voteRef),
+      ]);
 
-  if (voteSnap.exists()) {
-    const existingVote = voteSnap.data().voteType;
+      if (!leadSnap.exists()) throw new Error("Lead does not exist");
+      const previousVote = voteSnap.exists() ? voteSnap.data().voteType : null;
 
-    if (existingVote === type) {
-      // User clicked same vote again, remove vote
-      await deleteDoc(voteRef);
-      await updateDoc(leadRef, {
-        [`${type}_count`]: increment(-1)
-      });
-    } else {
-      // User is switching vote
-      await updateDoc(leadRef, {
-        [`${existingVote}_count`]: increment(-1),
-        [`${type}_count`]: increment(1)
-      });
-      await setDoc(voteRef, {
-        userId: user.uid,
-        voteType: type,
-        created_at: new Date()
-      });
-    }
-  } else {
-    // First vote
-    await setDoc(voteRef, {
-      userId: user.uid,
-      voteType: type,
-      created_at: new Date()
+      if (previousVote === voteType) {
+        // 🔁 Clicking same vote → remove it
+        tx.update(leadRef, { [`${voteType}_count`]: increment(-1) });
+        tx.delete(voteRef);
+      } else {
+        // 🔁 Switch vote or cast new vote
+        if (previousVote) {
+          tx.update(leadRef, { [`${previousVote}_count`]: increment(-1) });
+        }
+        tx.update(leadRef, { [`${voteType}_count`]: increment(1) });
+        tx.set(voteRef, {
+          userId: user.uid,
+          voteType,
+          created_at: new Date()
+        });
+      }
     });
-    await updateDoc(leadRef, {
-      [`${type}_count`]: increment(1)
-    });
+  } catch (err) {
+    console.error("Vote error:", err.message);
+    alert("Failed to cast vote. Try again.");
   }
 };
 
