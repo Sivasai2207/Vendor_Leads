@@ -6,21 +6,18 @@ import {
   onSnapshot,
   doc,
   runTransaction,
-  getDoc,
-  setDoc,
   deleteDoc,
-  updateDoc,
   increment,
-  writeBatch,
 } from "firebase/firestore";
 import { MoreVertical } from "lucide-react";
 
-export default function LeadTable() {
+export default function LeadTable({ searchTerm }) {
   const [user] = useAuthState(auth);
   const [leads, setLeads] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
   const [isModalOpen, setModalOpen] = useState(false);
 
+  // 🔁 Load real-time leads
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "vendorLeads"), (snapshot) => {
       const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -29,44 +26,51 @@ export default function LeadTable() {
     return () => unsubscribe();
   }, []);
 
-const handleVote = async (leadId, newVoteType) => {
-  if (!user) return alert("Please login to vote");
+  // 🔍 Filter leads by search term
+  const filteredLeads = leads.filter((lead) =>
+    `${lead.name} ${lead.companyName} ${lead.email} ${lead.phone} ${lead.notes}`
+      .toLowerCase()
+      .includes(searchTerm?.toLowerCase() || "")
+  );
 
-  const voteRef = doc(db, `vendorLeads/${leadId}/votes`, user.uid);
-  const leadRef = doc(db, "vendorLeads", leadId);
+  // 🗳 Handle voting (toggle + change vote)
+  const handleVote = async (leadId, newVoteType) => {
+    if (!user) return alert("Please login to vote");
 
-  try {
-    await runTransaction(db, async (tx) => {
-      const voteSnap = await tx.get(voteRef);
-      const leadSnap = await tx.get(leadRef);
+    const voteRef = doc(db, `vendorLeads/${leadId}/votes`, user.uid);
+    const leadRef = doc(db, "vendorLeads", leadId);
 
-      if (!leadSnap.exists()) throw new Error("Lead does not exist");
+    try {
+      await runTransaction(db, async (tx) => {
+        const voteSnap = await tx.get(voteRef);
+        const leadSnap = await tx.get(leadRef);
+        if (!leadSnap.exists()) throw new Error("Lead not found");
 
-      const previousVote = voteSnap.exists() ? voteSnap.data().voteType : null;
+        const previousVote = voteSnap.exists() ? voteSnap.data().voteType : null;
 
-      if (previousVote === newVoteType) {
-        // 🔁 Remove vote (toggle off)
-        tx.update(leadRef, { [`${newVoteType}_count`]: increment(-1) });
-        tx.delete(voteRef);
-      } else {
-        // 🔁 Change vote
-        if (previousVote) {
-          tx.update(leadRef, { [`${previousVote}_count`]: increment(-1) });
+        if (previousVote === newVoteType) {
+          // Toggle off
+          tx.update(leadRef, { [`${newVoteType}_count`]: increment(-1) });
+          tx.delete(voteRef);
+        } else {
+          if (previousVote) {
+            tx.update(leadRef, { [`${previousVote}_count`]: increment(-1) });
+          }
+          tx.update(leadRef, { [`${newVoteType}_count`]: increment(1) });
+          tx.set(voteRef, {
+            userId: user.uid,
+            voteType: newVoteType,
+            updated_at: new Date(),
+          });
         }
-        tx.update(leadRef, { [`${newVoteType}_count`]: increment(1) });
-        tx.set(voteRef, {
-          voteType: newVoteType,
-          userId: user.uid,
-          updated_at: new Date(),
-        });
-      }
-    });
-  } catch (err) {
-    console.error("Voting error:", err.message);
-    alert("Could not vote. Try again.");
-  }
-};
+      });
+    } catch (err) {
+      console.error("Voting error:", err.message);
+      alert("Could not vote. Try again.");
+    }
+  };
 
+  // 🗑 Delete lead
   const handleDelete = async (leadId) => {
     if (!window.confirm("Are you sure you want to delete this lead?")) return;
     await deleteDoc(doc(db, "vendorLeads", leadId));
@@ -100,7 +104,7 @@ const handleVote = async (leadId, newVoteType) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {leads.map((lead) => (
+              {filteredLeads.map((lead) => (
                 <tr key={lead.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-medium">{lead.name ?? "N/A"}</td>
                   <td className="px-6 py-4">{lead.companyName ?? "N/A"}</td>
@@ -108,22 +112,13 @@ const handleVote = async (leadId, newVoteType) => {
                   <td className="px-6 py-4">{lead.email ?? "N/A"}</td>
                   <td className="px-6 py-4">{lead.notes ?? "N/A"}</td>
                   <td className="px-6 py-4 flex gap-3">
-                    <button
-                      onClick={() => handleVote(lead.id, "like")}
-                      className="text-green-600"
-                    >
+                    <button onClick={() => handleVote(lead.id, "like")} className="text-green-600">
                       👍 {lead.like_count ?? 0}
                     </button>
-                    <button
-                      onClick={() => handleVote(lead.id, "dislike")}
-                      className="text-red-500"
-                    >
+                    <button onClick={() => handleVote(lead.id, "dislike")} className="text-red-500">
                       👎 {lead.dislike_count ?? 0}
                     </button>
-                    <button
-                      onClick={() => handleVote(lead.id, "stopped")}
-                      className="text-yellow-600"
-                    >
+                    <button onClick={() => handleVote(lead.id, "stopped")} className="text-yellow-600">
                       ⛔ {lead.stopped_count ?? 0}
                     </button>
                   </td>
@@ -139,7 +134,7 @@ const handleVote = async (leadId, newVoteType) => {
         </div>
       </div>
 
-      {/* View Modal */}
+      {/* Modal View */}
       {isModalOpen && selectedLead && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6 relative">

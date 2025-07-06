@@ -4,12 +4,18 @@ import { useAuthState } from "react-firebase-hooks/auth";
 import { signOut } from "firebase/auth";
 import { Search, Plus, ChevronDown } from "lucide-react";
 
-export default function Navbar({ onContributeClick }) {
+export default function Navbar({ onContributeClick, onSearch }) {
   const [user] = useAuthState(auth);
   const [showMenu, setShowMenu] = useState(false);
+  const [query, setQuery] = useState("");
 
   const handleLogout = () => {
     signOut(auth);
+  };
+
+  const handleSearchChange = (e) => {
+    setQuery(e.target.value);
+    onSearch(e.target.value); // ✅ Send search text to parent
   };
 
   const getInitials = (name) => {
@@ -27,6 +33,8 @@ export default function Navbar({ onContributeClick }) {
           <input
             type="text"
             placeholder="Search leads..."
+            value={query}
+            onChange={handleSearchChange}
             className="w-full border border-gray-300 rounded-md pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
           />
         </div>
