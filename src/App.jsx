@@ -69,6 +69,7 @@ export default function App() {
             </ProtectedAdminRoute>
           }
         />
+        {/* <Route path="/signup" element={<SignupPage />} /> */}
       </Routes>
     </Router>
   );
