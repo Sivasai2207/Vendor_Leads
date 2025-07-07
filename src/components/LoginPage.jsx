@@ -1,38 +1,69 @@
-import { useEffect, useState } from "react";
-import { auth, provider } from "../firebase";
-import { signInWithPopup, onAuthStateChanged } from "firebase/auth";
+import { useState } from "react";
+import { auth, db } from "../firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 
 export default function LoginPage() {
-  const [user, setUser] = useState(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        navigate("/home");
-      }
-    });
-    return () => unsubscribe();
-  }, [navigate]);
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError("");
 
-  const loginWithGoogle = () => {
-    signInWithPopup(auth, provider).catch((err) => console.error(err));
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // ✅ Check allowedUsers
+      const allowedRef = doc(db, "allowedUsers", user.uid);
+      const allowedSnap = await getDoc(allowedRef);
+
+      if (allowedSnap.exists()) {
+        navigate("/home");
+      } else {
+        setError("You are not authorized to access this app.");
+        await auth.signOut();
+      }
+    } catch (err) {
+      setError("Invalid email or password.");
+      console.error("Auth Error:", err);
+    }
   };
 
   return (
-    <div className="h-screen bg-gray-100 flex flex-col items-center justify-center px-4 text-center">
-      <h1 className="text-3xl font-bold mb-6">Welcome to Vendor Leads Database App</h1>
-      <p className="text-gray-600 mb-10 max-w-md">
-        Sign in with your Google account to access the application and submit or vote on vendor leads.
-      </p>
-      <button
-        onClick={loginWithGoogle}
-        className="bg-blue-600 hover:bg-blue-700 text-white text-lg font-medium px-8 py-3 rounded shadow-lg"
-      >
-        Sign in with Google
-      </button>
+    <div className="h-screen flex items-center justify-center bg-gray-100">
+      <div className="bg-white p-8 rounded shadow-md w-full max-w-sm">
+        <h1 className="text-2xl font-bold mb-4 text-center">Login</h1>
+        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+        <form onSubmit={handleLogin} className="space-y-4">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full px-4 py-2 border rounded"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="w-full px-4 py-2 border rounded"
+          />
+          <button
+            type="submit"
+            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+          >
+            Sign In
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
