@@ -5,35 +5,82 @@ import {
   collection,
   onSnapshot,
   doc,
+  getDoc,
   runTransaction,
   deleteDoc,
   increment,
 } from "firebase/firestore";
 import { MoreVertical } from "lucide-react";
 
-export default function LeadTable({ searchTerm }) {
+export default function LeadTable({ searchTerm, authorFilter, setAuthorOptions }) {
   const [user] = useAuthState(auth);
   const [leads, setLeads] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
   const [isModalOpen, setModalOpen] = useState(false);
 
-  // 🔁 Load real-time leads
+  // 🔁 Load leads and fetch author names
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "vendorLeads"), (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      setLeads(data);
+    const unsubscribe = onSnapshot(collection(db, "vendorLeads"), async (snapshot) => {
+      const leadDocs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      const enrichedLeads = await Promise.all(
+        leadDocs.map(async (lead) => {
+          if (!lead.authorId) return { ...lead, authorName: "Unknown" };
+
+          try {
+            const authorDoc = await getDoc(doc(db, "allowedUsers", lead.authorId));
+            if (!authorDoc.exists()) return { ...lead, authorName: "Unknown" };
+
+            const authorData = authorDoc.data();
+            return {
+              ...lead,
+              authorName: authorData.name ?? "Unknown",
+            };
+          } catch (err) {
+            console.error("Error fetching author:", err);
+            return { ...lead, authorName: "Unknown" };
+          }
+        })
+      );
+
+      setLeads(enrichedLeads);
+
+      // Extract and sort unique contributor names
+      const uniqueContributors = Array.from(
+        new Set(
+          enrichedLeads
+            .filter((lead) => lead.authorName && lead.authorName !== "Unknown")
+            .map((lead) => lead.authorName)
+        )
+      ).sort();
+
+      if (typeof setAuthorOptions === "function") {
+        setAuthorOptions(uniqueContributors);
+      }
     });
+
     return () => unsubscribe();
-  }, []);
+  }, [setAuthorOptions]);
 
-  // 🔍 Filter leads by search term
-  const filteredLeads = leads.filter((lead) =>
-    `${lead.name} ${lead.companyName} ${lead.email} ${lead.phone} ${lead.notes}`
-      .toLowerCase()
-      .includes(searchTerm?.toLowerCase() || "")
-  );
+  // 🔍 Combined search and author filter logic
+  const filteredLeads = leads.filter((lead) => {
+    const search = searchTerm?.toLowerCase() || "";
+    const author = authorFilter?.toLowerCase() || "";
 
-  // 🗳 Handle voting (toggle + change vote)
+    return (
+      (
+        `${lead.name} ${lead.companyName} ${lead.email} ${lead.phone} ${lead.notes} ${lead.authorName}`
+          .toLowerCase()
+          .includes(search)
+      ) &&
+      lead.authorName?.toLowerCase().includes(author)
+    );
+  });
+
+  // 🗳 Voting logic
   const handleVote = async (leadId, newVoteType) => {
     if (!user) return alert("Please login to vote");
 
@@ -49,7 +96,6 @@ export default function LeadTable({ searchTerm }) {
         const previousVote = voteSnap.exists() ? voteSnap.data().voteType : null;
 
         if (previousVote === newVoteType) {
-          // Toggle off
           tx.update(leadRef, { [`${newVoteType}_count`]: increment(-1) });
           tx.delete(voteRef);
         } else {
@@ -70,7 +116,7 @@ export default function LeadTable({ searchTerm }) {
     }
   };
 
-  // 🗑 Delete lead
+  // 🗑 Lead delete
   const handleDelete = async (leadId) => {
     if (!window.confirm("Are you sure you want to delete this lead?")) return;
     await deleteDoc(doc(db, "vendorLeads", leadId));
@@ -99,6 +145,7 @@ export default function LeadTable({ searchTerm }) {
                 <th className="px-6 py-4">Phone</th>
                 <th className="px-6 py-4">Email</th>
                 <th className="px-6 py-4">Notes</th>
+                <th className="px-6 py-4">Author</th>
                 <th className="px-6 py-4">Votes</th>
                 <th className="px-6 py-4">Actions</th>
               </tr>
@@ -111,6 +158,7 @@ export default function LeadTable({ searchTerm }) {
                   <td className="px-6 py-4">{lead.phone ?? "N/A"}</td>
                   <td className="px-6 py-4">{lead.email ?? "N/A"}</td>
                   <td className="px-6 py-4">{lead.notes ?? "N/A"}</td>
+                  <td className="px-6 py-4">{lead.authorName ?? "Unknown"}</td>
                   <td className="px-6 py-4 flex gap-3">
                     <button onClick={() => handleVote(lead.id, "like")} className="text-green-600">
                       👍 {lead.like_count ?? 0}
@@ -134,7 +182,7 @@ export default function LeadTable({ searchTerm }) {
         </div>
       </div>
 
-      {/* Modal View */}
+      {/* Modal for Lead Details */}
       {isModalOpen && selectedLead && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6 relative">
@@ -151,9 +199,7 @@ export default function LeadTable({ searchTerm }) {
               <p><strong>Phone:</strong> {selectedLead.phone}</p>
               <p><strong>Email:</strong> {selectedLead.email}</p>
               <p><strong>Notes:</strong> {selectedLead.notes}</p>
-              <p>
-                <strong>Votes:</strong> 👍 {selectedLead.like_count ?? 0}, 👎 {selectedLead.dislike_count ?? 0}, ⛔ {selectedLead.stopped_count ?? 0}
-              </p>
+              <p><strong>Votes:</strong> 👍 {selectedLead.like_count ?? 0}, 👎 {selectedLead.dislike_count ?? 0}, ⛔ {selectedLead.stopped_count ?? 0}</p>
             </div>
             {user?.uid === selectedLead.authorId && (
               <div className="mt-4">

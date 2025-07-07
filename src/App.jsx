@@ -10,22 +10,35 @@ import ContributeModal from "./components/ContributeModal";
 
 // Route Guards
 import ProtectedRoute from "./components/ProtectedRoute";
-import ProtectedAdminRoute from "./components/ProtectedAdminRoute"; // ✅ NEW
+import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
 
 function Home() {
   const [isModalOpen, setModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [authorFilter, setAuthorFilter] = useState("");
+  const [authorOptions, setAuthorOptions] = useState([]); // ✅ Store contributor list
 
   return (
     <div className="min-h-screen bg-[#f8f9fb] text-gray-800">
       <Navbar
         onContributeClick={() => setModalOpen(true)}
-        onSearch={setSearchTerm}
+        onSearch={(search, author) => {
+          setSearchTerm(search);
+          setAuthorFilter(author);
+        }}
+        authorOptions={authorOptions} // ✅ Pass authors to Navbar
       />
       <main className="max-w-7xl mx-auto px-4 py-6">
-        <LeadTable searchTerm={searchTerm} />
+        <LeadTable
+          searchTerm={searchTerm}
+          authorFilter={authorFilter}
+          setAuthorOptions={setAuthorOptions} // ✅ Let LeadTable push authors up
+        />
       </main>
-      <ContributeModal isOpen={isModalOpen} onClose={() => setModalOpen(false)} />
+      <ContributeModal
+        isOpen={isModalOpen}
+        onClose={() => setModalOpen(false)}
+      />
     </div>
   );
 }
@@ -56,7 +69,6 @@ export default function App() {
             </ProtectedAdminRoute>
           }
         />
-        {/* <Route path="/signup" element={<SignupPage />} /> */}
       </Routes>
     </Router>
   );
