@@ -1,14 +1,35 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { auth, db } from "../firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
+import { useAuthState } from "react-firebase-hooks/auth";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const [user, loading] = useAuthState(auth);
+
+  // 🔁 Auto-redirect if already logged in and allowed
+  useEffect(() => {
+    const checkAccess = async () => {
+      if (user) {
+        const allowedRef = doc(db, "allowedUsers", user.uid);
+        const allowedSnap = await getDoc(allowedRef);
+
+        if (allowedSnap.exists()) {
+          navigate("/home", { replace: true });
+        } else {
+          await auth.signOut();
+          setError("You are not authorized to access this app.");
+        }
+      }
+    };
+
+    if (!loading) checkAccess();
+  }, [user, loading, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -16,10 +37,9 @@ export default function LoginPage() {
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      const signedUser = userCredential.user;
 
-      // ✅ Check allowedUsers
-      const allowedRef = doc(db, "allowedUsers", user.uid);
+      const allowedRef = doc(db, "allowedUsers", signedUser.uid);
       const allowedSnap = await getDoc(allowedRef);
 
       if (allowedSnap.exists()) {
@@ -30,7 +50,7 @@ export default function LoginPage() {
       }
     } catch (err) {
       setError("Invalid email or password.");
-      console.error("Auth Error:", err);
+      console.error("Login error:", err);
     }
   };
 

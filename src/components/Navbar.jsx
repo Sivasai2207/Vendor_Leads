@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from "react";
-import { auth } from "../firebase";
+import { useEffect, useRef, useState } from "react";
+import { auth, db } from "../firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { signOut } from "firebase/auth";
 import { Search, Plus, ChevronDown } from "lucide-react";
+import { doc, getDoc } from "firebase/firestore";
+import { useLocation, useNavigate } from "react-router-dom";
 
 export default function Navbar({ onContributeClick, onSearch, authorOptions = [] }) {
   const [user] = useAuthState(auth);
@@ -11,18 +13,28 @@ export default function Navbar({ onContributeClick, onSearch, authorOptions = []
   const [query, setQuery] = useState("");
   const [authorFilter, setAuthorFilter] = useState("");
   const [authorSearch, setAuthorSearch] = useState("");
-  const filterRef = useRef(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // Close dropdown if clicked outside
+  const filterRef = useRef(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // 🔁 Detect route
+  const isSignupPage = location.pathname === "/signup";
+  const isHomePage = location.pathname === "/home";
+
+  // ✅ Check if user is admin
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (filterRef.current && !filterRef.current.contains(event.target)) {
-        setShowFilters(false);
+    const checkAdmin = async () => {
+      if (user) {
+        const snap = await getDoc(doc(db, "allowedUsers", user.uid));
+        if (snap.exists()) {
+          setIsAdmin(snap.data().isAdmin === true);
+        }
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    checkAdmin();
+  }, [user]);
 
   const handleLogout = () => signOut(auth);
 
@@ -38,9 +50,7 @@ export default function Navbar({ onContributeClick, onSearch, authorOptions = []
     onSearch(query, val);
   };
 
-  const handleAuthorSearchInput = (e) => {
-    setAuthorSearch(e.target.value);
-  };
+  const handleAuthorSearchInput = (e) => setAuthorSearch(e.target.value);
 
   const handleApplyAuthorSearch = () => {
     setAuthorFilter(authorSearch);
@@ -56,7 +66,11 @@ export default function Navbar({ onContributeClick, onSearch, authorOptions = []
 
   const getInitials = (name) => {
     if (!name) return "?";
-    return name.split(" ").map((n) => n[0]).join("").toUpperCase();
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase();
   };
 
   const filteredAuthorOptions = authorOptions.filter((name) =>
@@ -65,10 +79,26 @@ export default function Navbar({ onContributeClick, onSearch, authorOptions = []
 
   return (
     <header className="bg-white shadow-sm px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 relative">
-      <h1 className="text-2xl font-bold text-gray-700">Vendor Leads</h1>
+      <h1
+        className="text-2xl font-bold text-gray-700 cursor-pointer"
+        onClick={() => navigate("/home")}
+      >
+        Vendor Leads
+      </h1>
 
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-        {/* 🔍 Main Search Input */}
+
+        {/* 🔘 Admin Toggle Button */}
+        {isAdmin && (
+          <button
+            onClick={() => navigate(isSignupPage ? "/home" : "/signup")}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm"
+          >
+            {isSignupPage ? "Home" : "Signup"}
+          </button>
+        )}
+
+        {/* 🔍 Search Input */}
         <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
           <input
@@ -80,7 +110,7 @@ export default function Navbar({ onContributeClick, onSearch, authorOptions = []
           />
         </div>
 
-        {/* 🔘 Buttons */}
+        {/* 🔘 Search + Contribute Buttons */}
         <button
           className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
           onClick={() => onSearch(query, authorFilter)}
@@ -95,7 +125,7 @@ export default function Navbar({ onContributeClick, onSearch, authorOptions = []
           <Plus size={16} className="mr-1" /> Contribute
         </button>
 
-        {/* 🧩 Filter Dropdown */}
+        {/* 🔽 Filter Panel */}
         <div className="relative" ref={filterRef}>
           <button
             className="flex items-center bg-gray-100 text-gray-800 px-4 py-2 rounded-md border hover:bg-gray-200 text-sm"
@@ -114,14 +144,12 @@ export default function Navbar({ onContributeClick, onSearch, authorOptions = []
                 onChange={handleAuthorSearchInput}
                 className="w-full mb-2 border rounded px-2 py-1 text-sm"
               />
-
               <button
                 className="w-full bg-blue-500 text-white py-1 px-2 rounded text-sm mb-2"
                 onClick={handleApplyAuthorSearch}
               >
                 Apply Author Search
               </button>
-
               <label className="block text-xs text-gray-600 mb-1">Filter by Author</label>
               <select
                 value={authorFilter}
@@ -135,7 +163,6 @@ export default function Navbar({ onContributeClick, onSearch, authorOptions = []
                   </option>
                 ))}
               </select>
-
               <button
                 onClick={handleClearFilters}
                 className="mt-3 text-xs text-blue-600 hover:underline w-full text-left"
@@ -146,7 +173,7 @@ export default function Navbar({ onContributeClick, onSearch, authorOptions = []
           )}
         </div>
 
-        {/* 👤 User Menu */}
+        {/* 👤 User Avatar Menu */}
         {user && (
           <div className="relative">
             {user.photoURL ? (
