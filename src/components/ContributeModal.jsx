@@ -30,6 +30,7 @@ export default function ContributeModal({ isOpen, onClose }) {
         like_count: 0,
         dislike_count: 0,
         stopped_count: 0,
+        status: "open", // ✅ NEW FIELD
         created_at: serverTimestamp(),
         updated_at: serverTimestamp()
       });
